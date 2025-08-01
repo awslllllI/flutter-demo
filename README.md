@@ -25,8 +25,7 @@
 
 1. 创建新flutter项目。
 2. 在`android/app/build.gradle`拿到包名`namespace`
-3. 获取SHA1码，终端输入` keytool -genkey -v -keystore C:\Users\你的用户名\.android\debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
-`
+3. 获取SHA1码，终端输入` keytool -list -v -keystore C:/Users/<你的用户>/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`
 4. 用包名和SHA1码在[高德开放平台](https://lbs.amap.com/?ref=https://console.amap.com/dev/index)获取key
 5. [amap_flutter_location example](https://pub.dev/packages/amap_flutter_location/example)用这个代码替换main。（[amap_flutter_map](https://pub.dev/packages/amap_flutter_map)这个插件的example不可用）
 6. 在` AMapFlutterLocation.setApiKey("android", "ios");`填入key
