@@ -16,10 +16,10 @@
 
 ## 依赖插件（pubspec.yaml）
 
-- [amap_flutter_map](https://pub.dev/packages/amap_flutter_map)
-- [amap_flutter_base](https://pub.dev/packages/amap_flutter_base)
-- [amap_flutter_location](https://pub.dev/packages/amap_flutter_location)
-- [permission_handler](https://pub.dev/packages/permission_handler)
+- [amap_flutter_map](https://pub.dev/packages/amap_flutter_map)2025/8/1 amap_flutter_map: ^3.0.0
+- [amap_flutter_base](https://pub.dev/packages/amap_flutter_base)2025/8/1 amap_flutter_base: ^3.0.0 
+- [amap_flutter_location](https://pub.dev/packages/amap_flutter_location)2025/8/1 amap_flutter_location: ^3.0.0
+- [permission_handler](https://pub.dev/packages/permission_handler)2025/8/1 permission_handler: ^11.0.0
 
 ## 步骤
 
