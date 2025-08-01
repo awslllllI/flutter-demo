@@ -61,7 +61,7 @@ class _MyAppState extends State<MyApp> {
     ///key的申请请参考高德开放平台官网说明<br>
     ///Android: https://lbs.amap.com/api/android-location-sdk/guide/create-project/get-key
     ///iOS: https://lbs.amap.com/api/ios-location-sdk/guide/create-project/get-key
-    AMapFlutterLocation.setApiKey("438fb8be45d2ab71ec8d0886204713d7", "");
+    AMapFlutterLocation.setApiKey("androidKey", "iosKey");
 
     ///注册定位结果监听
     _locationListener = _locationPlugin.onLocationChanged().listen((Map<String, Object> result) {
