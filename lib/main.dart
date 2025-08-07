@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:amap_flutter_location/amap_flutter_location.dart';
 import 'package:amap_flutter_location/amap_location_option.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'dart:math' as math;
 
 void main() {
   runApp(const MyApp());
@@ -27,7 +30,14 @@ class _MyAppState extends State<MyApp> {
 
   bool _mapInitializationFailed = false;
   AMapController? _mapController;
-  final Set<Marker> _markers = {};
+  Set<Marker> _markers = {};
+
+  List<LatLng> _tracePoints = []; // 存放轨迹点
+  Set<Polyline> _polylines = {}; // 轨迹线
+
+  double _nearbyRadiusMeters = 10.0;
+  bool _isSimulating = false;
+  Timer? _simulationTimer;
 
   @override
   void initState() {
@@ -61,7 +71,7 @@ class _MyAppState extends State<MyApp> {
     ///key的申请请参考高德开放平台官网说明<br>
     ///Android: https://lbs.amap.com/api/android-location-sdk/guide/create-project/get-key
     ///iOS: https://lbs.amap.com/api/ios-location-sdk/guide/create-project/get-key
-    AMapFlutterLocation.setApiKey("androidKey", "iosKey");
+    AMapFlutterLocation.setApiKey("438fb8be45d2ab71ec8d0886204713d7", "3b85cb52249e3e0ab484d2434b0317d5");
 
     ///注册定位结果监听
     _locationListener = _locationPlugin.onLocationChanged().listen((Map<String, Object> result) {
@@ -72,17 +82,34 @@ class _MyAppState extends State<MyApp> {
         double? longitude = double.tryParse(result["longitude"].toString());
 
         if (latitude != null && longitude != null) {
-          LatLng position = LatLng(latitude, longitude);
+          LatLng reportedPosition = LatLng(latitude, longitude);
 
+          LatLng position;
+          if (_tracePoints.isNotEmpty) {
+            // 若已有上一个点，则在上一个点周围取一个随机点作为下一个点
+            position = _randomPointNearby(_tracePoints.last, _nearbyRadiusMeters);
+          } else {
+            // 第一次使用定位结果作为起点
+            position = reportedPosition;
+          }
+
+          _tracePoints.add(position);
+
+          _polylines = {
+            Polyline(
+              capType: CapType.square,
+              joinType: JoinType.miter,
+              geodesic: true,
+              points: _tracePoints,
+              color: Colors.red,
+              width: 5,
+            ),
+          };
           // 清除旧的 Marker（可选）
           _markers.clear();
 
           // 添加新的 Marker
-          _markers.add(Marker(
-            position: position,
-            infoWindow: const InfoWindow(title: "当前位置"),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          ));
+          _updateMarkerAt(position);
 
           // 移动相机到当前位置
           _mapController?.moveCamera(
@@ -93,10 +120,54 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+// 随机生成上一个点 _center 周围的点，距离在 [0, radiusMeters)
+  LatLng _randomPointNearby(LatLng center, double radiusMeters) {
+    const R = 6371000.0; // 地球半径（米）
+    final rand = math.Random();
+
+    // 随机距离（0..radius)
+    final double distance = rand.nextDouble() * radiusMeters;
+
+    // 随机方位角 0..2π
+    final double bearing = rand.nextDouble() * 2 * math.pi;
+
+    // 将经纬度从度转为弧度
+    final double lat1 = center.latitude * math.pi / 180;
+    final double lon1 = center.longitude * math.pi / 180;
+
+    final double angularDistance = distance / R;
+
+    // 公式：球面正弦/余弦推进（常用的“根据起点、方位角和距离计算终点”公式）
+    final double lat2 = math.asin(
+      math.sin(lat1) * math.cos(angularDistance) + math.cos(lat1) * math.sin(angularDistance) * math.cos(bearing),
+    );
+
+    final double lon2 = lon1 +
+        math.atan2(
+          math.sin(bearing) * math.sin(angularDistance) * math.cos(lat1),
+          math.cos(angularDistance) - math.sin(lat1) * math.sin(lat2),
+        );
+
+    // 转回度
+    return LatLng(lat2 * 180 / math.pi, lon2 * 180 / math.pi);
+  }
+
+  void _updateMarkerAt(LatLng position) {
+    _markers = {
+      Marker(
+        position: position,
+        draggable: false,
+        infoWindow: const InfoWindow(title: "当前位置"),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+    };
+  }
+
   @override
   void dispose() {
     _mapController?.disponse();
     super.dispose();
+    _simulationTimer?.cancel();
 
     ///移除定位监听
     if (null != _locationListener) {
@@ -167,48 +238,180 @@ class _MyAppState extends State<MyApp> {
 
   Container _createButtonContainer() {
     return Container(
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            ElevatedButton(
-              onPressed: _startLocation,
-              style: ButtonStyle(
-                backgroundColor: MaterialStateProperty.all(Colors.blue),
-                foregroundColor: MaterialStateProperty.all(Colors.white),
-              ),
-              child: const Text('开始定位'),
-            ),
-            Container(width: 20.0),
-            ElevatedButton(
-              onPressed: _stopLocation,
-              style: ButtonStyle(
-                backgroundColor: MaterialStateProperty.all(Colors.blue),
-                foregroundColor: MaterialStateProperty.all(Colors.white),
-              ),
-              child: const Text('停止定位'),
-            )
-          ],
-        ));
-  }
-
-  Widget _resultWidget(key, value) {
-    return Container(
-      child: Row(
+      padding: const EdgeInsets.all(8),
+      alignment: Alignment.center,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: <Widget>[
-          Container(
-            alignment: Alignment.centerRight,
-            width: 100.0,
-            child: Text('$key :'),
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              ElevatedButton(
+                onPressed: _startLocation,
+                style: ButtonStyle(
+                  backgroundColor: MaterialStateProperty.all(Colors.blue),
+                  foregroundColor: MaterialStateProperty.all(Colors.white),
+                ),
+                child: const Text('开始定位'),
+              ),
+              const SizedBox(width: 20.0),
+              ElevatedButton(
+                onPressed: _stopLocation,
+                style: ButtonStyle(
+                  backgroundColor: MaterialStateProperty.all(Colors.blue),
+                  foregroundColor: MaterialStateProperty.all(Colors.white),
+                ),
+                child: const Text('停止定位'),
+              ),
+              const SizedBox(width: 20.0),
+              ElevatedButton(
+                onPressed: () {
+                  _stopSimulation();
+                  setState(() {
+                    _tracePoints = [];
+                    _polylines = {};
+                    _markers = {};
+                  });
+                },
+                style: ButtonStyle(
+                  backgroundColor: MaterialStateProperty.all(Colors.red),
+                  foregroundColor: MaterialStateProperty.all(Colors.white),
+                ),
+                child: const Text('清除轨迹'),
+              ),
+            ],
           ),
-          Container(width: 5.0),
-          Flexible(child: Text('$value', softWrap: true)),
+          const SizedBox(height: 16),
+          Text("随机偏移半径：${_nearbyRadiusMeters.toStringAsFixed(1)} 米"),
+          Slider(
+            value: _nearbyRadiusMeters,
+            min: 1,
+            max: 100,
+            divisions: 99,
+            label: "${_nearbyRadiusMeters.toStringAsFixed(1)} m",
+            onChanged: (value) {
+              setState(() {
+                _nearbyRadiusMeters = value;
+              });
+            },
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: _isSimulating ? _stopSimulation : _startSimulation,
+                style: ButtonStyle(
+                  backgroundColor: MaterialStateProperty.all(Colors.green),
+                  foregroundColor: MaterialStateProperty.all(Colors.white),
+                ),
+                child: Text(_isSimulating ? '停止模拟' : '开始模拟轨迹'),
+              ),
+              const SizedBox(width: 20.0),
+              ElevatedButton(
+                onPressed: _exportTraceToFile,
+                style: ButtonStyle(
+                  backgroundColor: MaterialStateProperty.all(Colors.orange),
+                  foregroundColor: MaterialStateProperty.all(Colors.white),
+                ),
+                child: const Text('导出轨迹'),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  void _exportTraceToFile() async {
+    if (_tracePoints.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("当前没有轨迹可以导出")),
+      );
+      return;
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln("latitude,longitude");
+
+    for (LatLng point in _tracePoints) {
+      buffer.writeln("${point.latitude},${point.longitude}");
+    }
+
+    try {
+      final directory = await Directory.systemTemp.createTemp();
+      final filePath = "${directory.path}/trace_${DateTime.now().millisecondsSinceEpoch}.csv";
+      final file = File(filePath);
+      await file.writeAsString(buffer.toString());
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("轨迹已导出至文件：$filePath")),
+      );
+
+      print("轨迹导出成功：$filePath");
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("导出失败: $e")),
+      );
+      print("导出失败: $e");
+    }
+  }
+
+  Widget _resultWidget(key, value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Container(
+          alignment: Alignment.centerRight,
+          width: 100.0,
+          child: Text('$key :'),
+        ),
+        Container(width: 5.0),
+        Flexible(child: Text('$value', softWrap: true)),
+      ],
+    );
+  }
+
+  void _startSimulation() {
+    _stopSimulation();
+    if (_tracePoints.isEmpty) {
+      // 初始化一个默认起点（如北京天安门）
+      LatLng startPoint = const LatLng(39.909187, 116.397451);
+      _tracePoints.add(startPoint);
+      _updateMarkerAt(startPoint);
+      _mapController?.moveCamera(CameraUpdate.newLatLng(startPoint));
+    }
+
+    _isSimulating = true;
+    _simulationTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      setState(() {
+        LatLng lastPoint = _tracePoints.last;
+        LatLng nextPoint = _randomPointNearby(lastPoint, _nearbyRadiusMeters);
+
+        _tracePoints.add(nextPoint);
+
+        _polylines = {
+          Polyline(
+            points: _tracePoints,
+            color: Colors.red,
+            width: 5,
+          ),
+        };
+
+        _updateMarkerAt(nextPoint);
+        _mapController?.moveCamera(CameraUpdate.newLatLng(nextPoint));
+      });
+    });
+  }
+
+  void _stopSimulation() {
+    if (_isSimulating) {
+      _simulationTimer?.cancel();
+      _simulationTimer = null;
+      _isSimulating = false;
+    }
   }
 
   @override
@@ -217,6 +420,7 @@ class _MyAppState extends State<MyApp> {
     widgets.add(_createButtonContainer());
 
     if (_locationResult != null) {
+      print("定位结果: $_locationResult");
       _locationResult?.forEach((key, value) {
         widgets.add(_resultWidget(key, value));
       });
@@ -234,10 +438,15 @@ class _MyAppState extends State<MyApp> {
               child: _mapInitializationFailed
                   ? _buildErrorWidget()
                   : AMapWidget(
+                      // trafficEnabled: true,
                       onMapCreated: (controller) {
                         _mapController = controller;
                       },
                       markers: _markers,
+                      polylines: _polylines,
+                      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+                      },
                       initialCameraPosition: const CameraPosition(
                         target: LatLng(39.909187, 116.397451), // 北京天安门坐标
                         zoom: 14,
